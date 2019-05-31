@@ -233,40 +233,55 @@ SessionUaSdk::isConnected () const
 void
 SessionUaSdk::readAllNodes ()
 {
-    UaStatus status;
-    UaReadValueIds nodesToRead;
-    std::unique_ptr<std::vector<ItemUaSdk *>> itemsToRead(new std::vector<ItemUaSdk *>);
-    ServiceSettings serviceSettings;
-    OpcUa_UInt32 id = getTransactionId();
+	epicsUInt32 batchNodes = connectInfo.nMaxOperationsPerServiceCall; //Number of nodes per batch
+	epicsUInt32 numReadOperations = 1+((items.size()-1)/ batchNodes);  //Number of batchs
+	UaReadValueIds nodesToRead;
+	UaStatus status;
+	ServiceSettings serviceSettings;
 
-    nodesToRead.create(static_cast<OpcUa_UInt32>(items.size()));
-    OpcUa_UInt32 i = 0;
-    for (auto &it : items) {
-        it->getNodeId().copyTo(&nodesToRead[i].NodeId);
-        nodesToRead[i].AttributeId = OpcUa_Attributes_Value;
-        i++;
-        itemsToRead->push_back(it);
-    }
+	for (epicsUInt32 readOpCnt = 0; readOpCnt < numReadOperations; readOpCnt++) {
+		std::unique_ptr<std::vector<ItemUaSdk *>> itemsToRead(new std::vector<ItemUaSdk *>);
+		nodesToRead.create((readOpCnt < numReadOperations - 1) ? batchNodes : (items.size() % batchNodes));
+		OpcUa_UInt32 i = 0;
+		for (std::vector<ItemUaSdk *>::iterator it = items.begin()+(readOpCnt*batchNodes); (it != items.end())&&(it != items.begin()+((readOpCnt + 1)*batchNodes)); it++) {
+			(*it)->getNodeId().copyTo(&nodesToRead[i].NodeId);
+			nodesToRead[i].AttributeId = OpcUa_Attributes_Value;
+			i++;
+			itemsToRead->push_back(*it);
+		}
 
-    Guard G(opslock);
-    status = puasession->beginRead(serviceSettings,                // Use default settings
-                                   0,                              // Max age
-                                   OpcUa_TimestampsToReturn_Both,  // Time stamps to return
-                                   nodesToRead,                    // Array of nodes to read
-                                   id);                            // Transaction id
+		if (puasession) {
+			Guard G(opslock);
+			OpcUa_UInt32 id = getTransactionId();
+			status = puasession->beginRead(serviceSettings,                // Use default settings
+				0,                              // Max age
+				OpcUa_TimestampsToReturn_Both,  // Time stamps to return
+				nodesToRead,                    // Array of nodes to read
+				id);                            // Transaction id
 
-    if (status.isBad()) {
-        errlogPrintf("OPC UA session %s: (readAllNodes) beginRead service failed with status %s\n",
-                     name.c_str(), status.toString().toUtf8());
-    } else {
-        if (debug)
-            std::cout << "OPC UA session " << name.c_str()
-                      << ": (readAllNodes) beginRead service ok"
-                      << " (transaction id " << id
-                      << "; retrieving " << nodesToRead.length() << " nodes)" << std::endl;
-        outstandingOps.insert(std::pair<OpcUa_UInt32, std::unique_ptr<std::vector<ItemUaSdk *>>>
-                              (id, std::move(itemsToRead)));
-    }
+			if (status.isBad()) {
+				errlogPrintf("OPC UA session %s: (readAllNodes) beginRead service failed with status %s\n",
+					name.c_str(), status.toString().toUtf8());
+			}
+			else {
+				if (debug)
+					std::cout << "OPC UA session " << name.c_str()
+					<< ": (readAllNodes) beginRead service ok"
+					<< " (transaction id " << id
+					<< "; using batch of " << batchNodes
+					<< " nodes (batch number " << readOpCnt
+					<< "); retrieving " << nodesToRead.length()
+					<< " nodes; out of " << items.size() << " nodes totally)" << std::endl;
+				outstandingOps.insert(std::pair<OpcUa_UInt32, std::unique_ptr<std::vector<ItemUaSdk *>>>
+					(id, std::move(itemsToRead)));
+			}
+		}
+		else {
+			errlogPrintf("OPC UA session %s: (readAllNodes) session does not exist.\n",
+				name.c_str(), status.toString().toUtf8());
+		}
+
+	}
 }
 
 //TODO: Push to queue for worker thread (instead of doing a single item request)
