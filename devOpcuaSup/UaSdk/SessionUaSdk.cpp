@@ -106,6 +106,7 @@ SessionUaSdk::SessionUaSdk (const std::string &name, const std::string &serverUr
     connectInfo.bRetryInitialConnect = autoConnect;
     connectInfo.nMaxOperationsPerServiceCall = batchNodes;
 
+    originalUriTable.create(32);
     //TODO: init security settings
     if ((clientCertificate && (clientCertificate[0] != '\0'))
             || (clientPrivateKey && (clientPrivateKey[0] != '\0')))
@@ -517,6 +518,8 @@ void SessionUaSdk::connectionStatusChanged (
 
         // "The connection to the server is established and is working in normal mode."
     case UaClient::Connected:
+
+        updateNamespaceIndexes();
         readAllNodes();
         if (serverConnectionStatus == UaClient::Disconnected) {
             registerNodes();
@@ -530,6 +533,7 @@ void SessionUaSdk::connectionStatusChanged (
         // This requires to redo register nodes for the new session
         // or to read the namespace array."
     case UaClient::NewSessionCreated:
+	updateNamespaceIndexes();
         registerNodes();
         createAllSubscriptions();
         addAllMonitoredItems();
@@ -668,5 +672,31 @@ SessionUaSdk::atExit (void *junk)
         it.second->disconnect();
     }
 }
+void 
+SessionUaSdk::updateNamespaceIndexes()
+{
+    UaStringArray currentUriTable;
+    puasession->updateNamespaceTable();
+    currentUriTable = puasession->getNamespaceTable();
+    std::vector<int> nsIndexMappingTable;
+    for (unsigned int k = 0; k < originalUriTable.length(); k++) {
+        nsIndexMappingTable.push_back(k);
+        UaString originalUri(originalUriTable[k]);
+        for (unsigned int j = 0; j< currentUriTable.length(); j++) {
+            UaString currentUri(currentUriTable[j]);
+            if (!strcmp(originalUri.toUtf8(), currentUri.toUtf8())) {
+                nsIndexMappingTable.at(k) = j;
+                if (debug) errlogPrintf("original: %d using: %d uri: %s\n", k, nsIndexMappingTable.at(k), originalUri.toUtf8());
+                break;
+            }
+        }
+    }
+
+    for (std::vector<ItemUaSdk *>::iterator it = items.begin(); it != items.end(); it++) {
+        (*it)->getNodeId().setNamespaceIndex((OpcUa_UInt16)nsIndexMappingTable.at((*it)->linkinfo.namespaceIndex));
+
+    }
+}
+
 
 } // namespace DevOpcua

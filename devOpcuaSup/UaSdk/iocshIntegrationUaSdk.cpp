@@ -259,6 +259,59 @@ void opcuaShowDataCallFunc (const iocshArgBuf *args)
     }
 }
 
+static const iocshArg opcuaSetNamespaceUriArg0 = { "Session name", iocshArgString };
+static const iocshArg opcuaSetNamespaceUriArg1 = { "URI", iocshArgString };
+static const iocshArg opcuaSetNamespaceUriArg2 = { "Namespace Index", iocshArgInt };
+static const iocshArg *const opcuaSetNamespaceUriArg[3] = { &opcuaSetNamespaceUriArg0,&opcuaSetNamespaceUriArg1,&opcuaSetNamespaceUriArg2 };
+iocshFuncDef opcuaSetNamespaceUriFuncDef = { "opcuaSetNamespaceUri", 3, opcuaSetNamespaceUriArg };
+
+void opcuaSetNamespaceUriCallFunc(const iocshArgBuf *args)
+{
+    UaString g_sessionName;
+    UaString g_namespaceUri;
+
+    unsigned int g_namespaceIdx;
+    if (args[0].sval == NULL){
+        errlogPrintf("opcuaSetNamespaceUri: ABORT Missing Argument \"Session name\".\n");
+        return;
+    }
+    if (args[1].sval == NULL){
+        errlogPrintf("opcuaSetNamespaceUri: ABORT Missing Argument \"URI\".\n");
+        return;
+    }
+
+    if (args[2].ival == NULL){
+        errlogPrintf("opcuaSetNamespaceUri: ABORT Missing Argument \"Namespace Index\".\n");
+        return;
+    }
+    if ((args[2].ival < 0) || (args[2].ival > std::numeric_limits<unsigned int>::max())) {
+        errlogPrintf("opcuaSetNamespaceUri: ABORT Invalid Argument \"Namespace Index\". Expected unsigned int.\n");
+        return;
+    }
+    g_sessionName = args[0].sval;
+    g_namespaceUri = args[1].sval;
+    g_namespaceIdx = args[2].ival;
+
+    try {
+        SessionUaSdk &s = SessionUaSdk::findSession(args[0].sval);
+
+        if ((s.originalUriTable.length() < g_namespaceIdx + 1) || (g_namespaceIdx < 0)) {
+            errlogPrintf("opcuaSetNamespaceUri: \t Namespace index %d exceeds maximum allowed index.\n", g_namespaceIdx);
+            return;
+        }
+        s.originalUriTable[g_namespaceIdx] = *g_namespaceUri.copy();
+        if (s.isConnected()) 
+            s.updateNamespaceIndexes();
+        else
+            errlogPrintf("opcuaSetNamespaceUri: \t Session '%s' is not connected. Namespace indexes will be updated when connection is established\n", g_sessionName.toUtf8());
+
+    }
+    catch (std::exception &e) {
+        std::cerr << "ERROR : " << e.what() << std::endl;
+        errlogPrintf("opcuaSetNamespaceUri: \t couldnt find session with name %s\n", g_sessionName.toUtf8());
+    }
+}
+
 static
 void opcuaUaSdkIocshRegister ()
 {
@@ -271,6 +324,7 @@ void opcuaUaSdkIocshRegister ()
     iocshRegister(&opcuaShowSubscriptionFuncDef, opcuaShowSubscriptionCallFunc);
 
     iocshRegister(&opcuaShowDataFuncDef, opcuaShowDataCallFunc);
+    iocshRegister(&opcuaSetNamespaceUriFuncDef, opcuaSetNamespaceUriCallFunc);
 }
 
 extern "C" {

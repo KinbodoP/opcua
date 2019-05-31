@@ -229,6 +229,15 @@ public:
             const UaStatusCodeArray &results,
             const UaDiagnosticInfos &diagnosticInfos) override;
 
+    /**
+    * @brief Update namespace indexes
+    *
+    * Updates the mapping table to map the namespace indexes from the .db file to the namespace indexes on the server. 
+    * This is necessary because the namespace indexes on the server may change after a restart of the server but the namespace URIs are always valid.
+    */
+    void updateNamespaceIndexes();                              
+    UaStringArray originalUriTable;                              /**< list of namespace URIs */
+
 private:
     /**
      * @brief Register all nodes that are configured to be registered.
